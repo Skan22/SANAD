@@ -1,0 +1,7 @@
+# Python AI Engine Dependencies for Second Voice MVP
+# Install: pip install -r requirements.txt
+
+vosk>=0.3.45
+pyaudio>=0.2.13
+numpy>=1.21.0
+scikit-learn>=1.0.0
