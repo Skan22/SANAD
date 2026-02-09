@@ -12,16 +12,12 @@ dependencies:
     sdk: flutter
 
   # Offline Speech-to-Text
-  vosk_flutter: ^0.4.0
+  vosk_flutter: ^0.3.48
   
-  # Audio Capture
-  flutter_sound: ^9.2.13
-  
-  # Permissions
-  permission_handler: ^11.0.1
+  # Note: vosk_flutter handles audio capture internally via SpeechService
   
   # Haptic Feedback
-  vibration: ^1.8.4
+  vibration: ^3.1.6
   
   # State Management
   provider: ^6.1.1
@@ -38,4 +34,8 @@ flutter:
   uses-material-design: true
   
   assets:
-    - assets/models/
+    - assets/models/vosk-model-small-en-us-0.15.zip
+
+dependency_overrides:
+  permission_handler: ^11.0.1
+  permission_handler_android: ^12.0.0
