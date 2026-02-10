@@ -249,9 +249,14 @@ class _ConversationScreenState extends State<ConversationScreen> {
                     RecordingButton(
                       isListening: provider.isListening,
                       onPressed: () async {
-                        await provider.toggleListening();
-                        if (provider.isListening) {
-                          HapticService.onListeningStart();
+                        if (!provider.isListening && provider.messages.isEmpty) {
+                          // Show setup before first start
+                          _showSetupDialog(context, provider);
+                        } else {
+                          await provider.toggleListening();
+                          if (provider.isListening) {
+                            HapticService.onListeningStart();
+                          }
                         }
                       },
                     ),
@@ -401,6 +406,70 @@ class _ConversationScreenState extends State<ConversationScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showSetupDialog(BuildContext context, ConversationProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text('Session Setup'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'How many people are talking?',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [2, 3, 4, 5].map((count) {
+                    final isSelected = provider.maxParticipants == count;
+                    return InkWell(
+                      onTap: () {
+                        provider.setMaxParticipants(count);
+                        setState(() {});
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.neonBlue : AppColors.surfaceBorder,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Text(
+                          count.toString(),
+                          style: TextStyle(
+                            color: isSelected ? Colors.black : Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  await provider.toggleListening();
+                  if (provider.isListening) {
+                    HapticService.onListeningStart();
+                  }
+                },
+                child: const Text('START SESSION', style: TextStyle(color: AppColors.neonBlue, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

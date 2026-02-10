@@ -39,6 +39,8 @@ class ConversationProvider extends ChangeNotifier {
 
   // ── Configuration ─────────────────────────────────────────────────
   double _pauseThreshold = 0.5;
+  int _maxParticipants = 2; // Default to 2 for Phase 4 focus
+
 
   ConversationProvider() {
     _audioService = AudioStreamService(
@@ -47,6 +49,7 @@ class ConversationProvider extends ChangeNotifier {
       onError: _handleError,
       onListeningStateChanged: _handleListeningStateChanged,
       pauseThreshold: _pauseThreshold,
+      maxParticipants: _maxParticipants,
     );
 
     _amplitudeSubscription = _audioService.amplitudeStream.listen((amplitude) {
@@ -68,6 +71,9 @@ class ConversationProvider extends ChangeNotifier {
     // Load preferences
     _fontSize = _prefs!.getDouble('font_size') ?? 24.0;
     _pauseThreshold = _prefs!.getDouble('pause_threshold') ?? 0.5;
+    _maxParticipants = _prefs!.getInt('max_participants') ?? 2;
+    _audioService.pauseThreshold = _pauseThreshold;
+    _audioService.maxParticipants = _maxParticipants;
     _currentModelPath = _prefs!.getString('current_model_path') ?? 'assets/models/vosk-model-small-en-us-0.15.zip';
     _showPerformanceOverlay = _prefs!.getBool('show_performance_overlay') ?? false;
     _audioService.forceDemoMode = _prefs!.getBool('demo_mode') ?? false;
@@ -101,12 +107,21 @@ class ConversationProvider extends ChangeNotifier {
   bool get isInitialized => _isInitialized;
   bool get hapticEnabled => HapticService.enabled;
   double get pauseThreshold => _pauseThreshold;
+  int get maxParticipants => _maxParticipants;
   String? get errorMessage => _errorMessage;
   double get currentAmplitude => _currentAmplitude;
   String get currentModelPath => _currentModelPath;
   int get currentLatency => _currentLatency;
   bool get showPerformanceOverlay => _showPerformanceOverlay;
   bool get demoMode => _audioService.forceDemoMode;
+
+  /// Update max participants
+  void setMaxParticipants(int count) {
+    _maxParticipants = count;
+    _audioService.maxParticipants = count;
+    _prefs?.setInt('max_participants', count);
+    notifyListeners();
+  }
 
   /// Initialize audio service
   Future<bool> initialize() async {

@@ -35,6 +35,7 @@ class AudioStreamService {
   // Configuration
   double pauseThreshold; // seconds
   bool forceDemoMode = false;
+  int maxParticipants = 5;
   static const int sampleRate = 16000;
 
   // Callbacks
@@ -49,6 +50,7 @@ class AudioStreamService {
     this.onError,
     this.onListeningStateChanged,
     this.pauseThreshold = 0.5,
+    this.maxParticipants = 5,
   });
 
   bool get isInitialized => _isInitialized;
@@ -81,9 +83,9 @@ class AudioStreamService {
     final path = modelAssetPath ?? _currentModelPath;
     _currentModelPath = path;
 
-    // If already initialized with the same model, skip
+    // If already initialized, cleanup Vosk components but keep recorder alive
     if (_isInitialized) {
-       await dispose();
+       await _cleanupVosk();
     }
 
     try {
@@ -274,7 +276,7 @@ class AudioStreamService {
             (pauseThreshold * 1000);
 
     if (shouldChangeSpeaker || _currentSpeakerId == null) {
-      _speakerCount = (_speakerCount + 1) % 5;
+      _speakerCount = (_speakerCount + 1) % maxParticipants;
       _currentSpeakerId = 'speaker_$_speakerCount';
     }
 
@@ -375,13 +377,21 @@ class AudioStreamService {
     });
   }
 
-  /// Dispose resources
-  Future<void> dispose() async {
+  /// Cleanup Vosk resources
+  Future<void> _cleanupVosk() async {
     await stopListening();
-    await _recorder.dispose();
-    _amplitudeController.close();
     _recognizer?.dispose();
     _model?.dispose();
+    _recognizer = null;
+    _model = null;
     _isInitialized = false;
+  }
+
+  /// Dispose resources permanently
+  Future<void> dispose() async {
+    await _cleanupVosk();
+    await _recorder.dispose();
+    _amplitudeController.close();
+    _latencyController.close();
   }
 }
