@@ -7,12 +7,16 @@ class ChatBubble extends StatelessWidget {
   final ConversationMessage message;
   final double fontSize;
   final bool isCurrentSpeaker;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onSpeakerTap;
 
   const ChatBubble({
     super.key,
     required this.message,
     required this.fontSize,
     this.isCurrentSpeaker = false,
+    this.onLongPress,
+    this.onSpeakerTap,
   });
 
   @override
@@ -33,43 +37,56 @@ class ChatBubble extends StatelessWidget {
               isRightAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             // Speaker label
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4, left: 4, right: 4),
-              child: Text(
-                message.speakerName,
-                style: TextStyle(
-                  color: bubbleColor,
-                  fontSize: fontSize * 0.6,
-                  fontWeight: FontWeight.bold,
+            GestureDetector(
+              onTap: onSpeakerTap,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 4, left: 4, right: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message.speakerName,
+                      style: TextStyle(
+                        color: bubbleColor,
+                        fontSize: fontSize * 0.6,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (onSpeakerTap != null)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(Icons.edit, size: fontSize * 0.4, color: bubbleColor.withOpacity(0.5)),
+                      ),
+                  ],
                 ),
               ),
             ),
 
             // Message bubble
-            Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.75,
-              ),
-              decoration: BoxDecoration(
-                color: bubbleColor.withAlpha(38), // 15% opacity
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(20),
-                  topRight: const Radius.circular(20),
-                  bottomLeft: Radius.circular(isRightAligned ? 20 : 4),
-                  bottomRight: Radius.circular(isRightAligned ? 4 : 20),
+            GestureDetector(
+              onLongPress: onLongPress,
+              child: Container(
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.75,
                 ),
-                border: Border.all(
-                  color: bubbleColor.withAlpha(128), // 50% opacity
-                  width: 2,
+                decoration: BoxDecoration(
+                  color: bubbleColor.withAlpha(38), // 15% opacity
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(20),
+                    topRight: const Radius.circular(20),
+                    bottomLeft: Radius.circular(isRightAligned ? 20 : 4),
+                    bottomRight: Radius.circular(isRightAligned ? 4 : 20),
+                  ),
+                  border: Border.all(
+                    color: bubbleColor.withAlpha(128), // 50% opacity
+                    width: 2,
+                  ),
                 ),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Directionality(
-                    textDirection: TextDirection.rtl,
-                    child: Text(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       message.text,
                       style: TextStyle(
                         color: Colors.white,
@@ -77,19 +94,19 @@ class ChatBubble extends StatelessWidget {
                         height: 1.3,
                       ),
                     ),
-                  ),
-                  if (message.startTime != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        _formatDuration(message.startTime!),
-                        style: TextStyle(
-                          color: Colors.white54,
-                          fontSize: fontSize * 0.5,
+                    if (message.startTime != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          _formatDuration(message.startTime!),
+                          style: TextStyle(
+                            color: Colors.white54,
+                            fontSize: fontSize * 0.5,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
 

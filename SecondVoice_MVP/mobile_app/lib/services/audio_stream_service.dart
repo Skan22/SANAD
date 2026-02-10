@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:record/record.dart';
 import 'package:vosk_flutter/vosk_flutter.dart';
 import '../models/conversation_message.dart';
 
@@ -12,7 +14,14 @@ class AudioStreamService {
   VoskFlutterPlugin? _vosk;
   Model? _model;
   Recognizer? _recognizer;
-  SpeechService? _speechService;
+  
+  // Audio recording
+  final _recorder = AudioRecorder();
+  StreamSubscription<Uint8List>? _audioSubscription;
+  final StreamController<double> _amplitudeController =
+      StreamController<double>.broadcast();
+  final StreamController<int> _latencyController =
+      StreamController<int>.broadcast();
 
   // State
   bool _isInitialized = false;
@@ -21,12 +30,12 @@ class AudioStreamService {
   int _speakerCount = 0;
   DateTime? _lastWordTime;
   Timer? _demoTimer;
+  String _currentModelPath = 'assets/models/vosk-model-small-en-us-0.15.zip';
 
   // Configuration
   double pauseThreshold; // seconds
+  bool forceDemoMode = false;
   static const int sampleRate = 16000;
-  static const String modelPath =
-      'assets/models/vosk-model-small-en-us-0.15.zip';
 
   // Callbacks
   final void Function(ConversationMessage)? onNewMessage;
@@ -44,34 +53,47 @@ class AudioStreamService {
 
   bool get isInitialized => _isInitialized;
   bool get isListening => _isListening;
+  Stream<double> get amplitudeStream => _amplitudeController.stream;
+  Stream<int> get latencyStream => _latencyController.stream;
+  String get currentModelPath => _currentModelPath;
 
-  /// Check if we're running on a desktop platform
-  bool get _isDesktop =>
-      Platform.isLinux || Platform.isMacOS || Platform.isWindows;
+  /// Check if we're running on a desktop platform or if demo mode is forced
+  bool get _shouldRunDemo =>
+      forceDemoMode || Platform.isLinux || Platform.isMacOS || Platform.isWindows;
 
-  /// Request microphone permission (vosk_flutter handles this internally on mobile)
+  /// Request microphone permission
   Future<bool> requestMicrophonePermission() async {
-    if (_isDesktop) {
-      debugPrint('Desktop platform - permissions handled at system level');
+    if (_shouldRunDemo) {
+      debugPrint('Demo mode active - permissions bypassed');
       return true;
     }
-    debugPrint(
-        'Mobile platform - vosk_flutter will handle microphone permissions');
+    
+    final hasPermission = await _recorder.hasPermission();
+    if (!hasPermission) {
+      onError?.call('Microphone permission is required');
+      return false;
+    }
     return true;
   }
 
-  /// Initialize Vosk model and recognizer (does not start speech service)
-  Future<bool> initialize() async {
-    if (_isInitialized) return true;
+  /// Initialize Vosk model and recognizer
+  Future<bool> initialize({String? modelAssetPath}) async {
+    final path = modelAssetPath ?? _currentModelPath;
+    _currentModelPath = path;
+
+    // If already initialized with the same model, skip
+    if (_isInitialized) {
+       await dispose();
+    }
 
     try {
       _vosk = VoskFlutterPlugin.instance();
 
-      debugPrint('Loading Vosk model from assets: $modelPath');
+      debugPrint('Loading Vosk model from assets: $path');
       final modelLoader = ModelLoader();
-      String loadedModelPath = await modelLoader.loadFromAssets(modelPath);
+      String loadedModelPath = await modelLoader.loadFromAssets(path);
 
-      // Check if the model files are in a subdirectory (common with zips)
+      // Check if the model files are in a subdirectory
       loadedModelPath = _resolveModelPath(loadedModelPath);
 
       _model = await _vosk!.createModel(loadedModelPath);
@@ -82,7 +104,7 @@ class AudioStreamService {
       );
 
       _isInitialized = true;
-      debugPrint('Vosk model and recognizer initialized successfully');
+      debugPrint('Vosk model ($path) initialized successfully');
       return true;
     } catch (e) {
       onError?.call('Failed to initialize Vosk model: $e');
@@ -91,60 +113,33 @@ class AudioStreamService {
     }
   }
 
-  /// Resolve the actual model directory (may be nested inside zip extraction)
+  /// Resolve the actual model directory
   String _resolveModelPath(String basePath) {
     debugPrint('Resolving model path for: $basePath');
 
     final baseDir = Directory(basePath);
-    if (!baseDir.existsSync()) {
-      debugPrint('Error: Base model directory does not exist: $basePath');
-      return basePath;
-    }
+    if (!baseDir.existsSync()) return basePath;
 
     try {
-      // 1. Check if model.conf is at the root
-      if (File('$basePath/conf/model.conf').existsSync()) {
-        debugPrint('Found model.conf at root: $basePath');
-        return basePath;
-      }
+      if (File('$basePath/conf/model.conf').existsSync()) return basePath;
 
-      // 2. Recursive search for conf/model.conf
       final entities = baseDir.listSync(recursive: true);
-      debugPrint('Found ${entities.length} entities in model directory');
-
       for (final entity in entities) {
         if (entity.path.endsWith('conf/model.conf')) {
-          // The model directory is the parent of the 'conf' directory
-          final modelDir = File(entity.path).parent.parent.path;
-          debugPrint('Found model.conf via recursive search: ${entity.path}');
-          debugPrint('Resolved model directory: $modelDir');
-          return modelDir;
-        }
-      }
-
-      // 3. Fallback to listing immediate children if recursive search missed it (unlikely)
-      debugPrint('Recursive search failed, checking immediate subdirectories...');
-      for (final child in baseDir.listSync()) {
-        if (child is Directory) {
-          final subConf = File('${child.path}/conf/model.conf');
-          if (subConf.existsSync()) {
-            debugPrint('Found model in immediate subdirectory: ${child.path}');
-            return child.path;
-          }
+          return File(entity.path).parent.parent.path;
         }
       }
     } catch (e) {
       debugPrint('Error while resolving model path: $e');
     }
 
-    debugPrint('Warning: Could not find conf/model.conf, returning base path: $basePath');
     return basePath;
   }
 
   /// Start listening to microphone and transcribing
   Future<void> startListening() async {
     if (!_isInitialized) {
-      final success = await initialize();
+      final success = await initialize(modelAssetPath: _currentModelPath);
       if (!success) return;
     }
 
@@ -154,7 +149,7 @@ class AudioStreamService {
       final hasPermission = await requestMicrophonePermission();
       if (!hasPermission) return;
 
-      if (_isDesktop) {
+      if (_shouldRunDemo) {
         debugPrint('Desktop detected - using demo mode');
         _isListening = true;
         onListeningStateChanged?.call(true);
@@ -162,23 +157,45 @@ class AudioStreamService {
         return;
       }
 
-      // Initialize speech service if not already done (mobile only)
-      if (_speechService == null) {
-        debugPrint('Initializing speech service...');
-        _speechService = await _vosk!.initSpeechService(_recognizer!);
-      }
+      // Start recording stream (Mobile)
+      debugPrint('Starting audio stream for transcription...');
+      final stream = await _recorder.startStream(const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: sampleRate,
+        numChannels: 1,
+      ));
 
-      _speechService!.onResult().listen((result) {
-        _handleRecognitionResult(result);
+      _audioSubscription = stream.listen((Uint8List data) async {
+        if (_recognizer == null) return;
+
+        final stopwatch = Stopwatch()..start();
+
+        // 1. Process for transcription
+        final resultFound = await _recognizer!.acceptWaveformBytes(data);
+        
+        stopwatch.stop();
+        _latencyController.add(stopwatch.elapsedMilliseconds);
+
+        if (resultFound) {
+          final result = await _recognizer!.getResult();
+          _handleRecognitionResult(result);
+        } else {
+          final partial = await _recognizer!.getPartialResult();
+          onPartialResult?.call(_extractPartialText(partial));
+        }
+
+        // 2. Calculate amplitude for visualizer
+        _calculateAndEmitAmplitude(data);
       });
 
-      await _speechService!.start();
       _isListening = true;
       onListeningStateChanged?.call(true);
-      debugPrint('Started listening for speech');
+      debugPrint('Started listening for speech via stream');
     } catch (e) {
       onError?.call('Failed to start listening: $e');
       debugPrint('Start listening error: $e');
+      _isListening = false;
+      onListeningStateChanged?.call(false);
     }
   }
 
@@ -189,12 +206,51 @@ class AudioStreamService {
     try {
       _demoTimer?.cancel();
       _demoTimer = null;
-      await _speechService?.stop();
+      
+      await _audioSubscription?.cancel();
+      _audioSubscription = null;
+      
+      await _recorder.stop();
+      
       _isListening = false;
       onListeningStateChanged?.call(false);
       debugPrint('Stopped listening');
     } catch (e) {
       debugPrint('Stop listening error: $e');
+    }
+  }
+
+  /// Calculate amplitude (RMS) from PCM16 data
+  void _calculateAndEmitAmplitude(Uint8List data) {
+    if (data.isEmpty) return;
+    
+    double sum = 0;
+    // PCM16 is 2 bytes per sample
+    for (int i = 0; i < data.length; i += 2) {
+      if (i + 1 >= data.length) break;
+      
+      // Convert 2 bytes to Int16
+      final byte1 = data[i];
+      final byte2 = data[i+1];
+      int sample = (byte2 << 8) | byte1;
+      if (sample >= 32768) sample -= 65536;
+      
+      sum += sample * sample;
+    }
+    
+    final rms = math.sqrt(sum / (data.length / 2));
+    // Normalize RMS to 0.0 - 1.0 range (approximate max for speech is around 10000-15000)
+    final normalized = (rms / 15000.0).clamp(0.0, 1.0);
+    _amplitudeController.add(normalized);
+  }
+
+  /// Extract partial text from Vosk JSON
+  String _extractPartialText(String result) {
+    try {
+      final Map<String, dynamic> json = jsonDecode(result);
+      return (json['partial'] as String?)?.trim() ?? '';
+    } catch (_) {
+      return '';
     }
   }
 
@@ -260,25 +316,34 @@ class AudioStreamService {
     ];
 
     var messageIndex = 0;
-    _demoTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
+    final random = math.Random();
+    
+    _demoTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!_isListening) {
         timer.cancel();
         return;
       }
 
-      if (messageIndex < demoMessages.length) {
-        final now = DateTime.now();
-        if (messageIndex > 0) {
-          _lastWordTime = now.subtract(const Duration(milliseconds: 600));
-        }
+      // 1. Emit simulated amplitude
+      _amplitudeController.add(0.2 + random.nextDouble() * 0.4);
 
-        _emitMessage(demoMessages[messageIndex], now);
-        messageIndex++;
-      } else {
-        timer.cancel();
-        _isListening = false;
-        onListeningStateChanged?.call(false);
-        debugPrint('Demo mode completed');
+      // 2. Emit messages periodically (every 2 seconds)
+      if (timer.tick % 20 == 0) {
+        if (messageIndex < demoMessages.length) {
+          final now = DateTime.now();
+          if (messageIndex > 0) {
+            _lastWordTime = now.subtract(const Duration(milliseconds: 600));
+          }
+
+          _emitMessage(demoMessages[messageIndex], now);
+          messageIndex++;
+        } else {
+          timer.cancel();
+          _isListening = false;
+          _amplitudeController.add(0.0);
+          onListeningStateChanged?.call(false);
+          debugPrint('Demo mode completed');
+        }
       }
     });
   }
@@ -286,6 +351,8 @@ class AudioStreamService {
   /// Dispose resources
   Future<void> dispose() async {
     await stopListening();
+    await _recorder.dispose();
+    _amplitudeController.close();
     _recognizer?.dispose();
     _model?.dispose();
     _isInitialized = false;

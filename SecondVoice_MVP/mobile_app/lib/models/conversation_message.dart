@@ -21,17 +21,23 @@ class ConversationMessage {
     required this.color,
   });
 
-  /// Create a copy with updated text (for partial results)
-  ConversationMessage copyWith({String? text, Duration? endTime}) {
+  /// Create a copy with updated fields (for partial results, renaming, etc)
+  ConversationMessage copyWith({
+    String? speakerId,
+    String? speakerName,
+    String? text,
+    Duration? endTime,
+    SpeakerColor? color,
+  }) {
     return ConversationMessage(
       id: id,
-      speakerId: speakerId,
-      speakerName: speakerName,
+      speakerId: speakerId ?? this.speakerId,
+      speakerName: speakerName ?? this.speakerName,
       text: text ?? this.text,
       timestamp: timestamp,
       startTime: startTime,
       endTime: endTime ?? this.endTime,
-      color: color,
+      color: color ?? this.color,
     );
   }
 
