@@ -1,41 +1,47 @@
-/// ConversationProvider - State management for Second Voice
-/// Manages conversation messages, listening state, and accessibility settings
-
 import 'package:flutter/foundation.dart';
-import 'package:vibration/vibration.dart';
 import '../models/conversation_message.dart';
 import 'audio_stream_service.dart';
+import 'haptic_service.dart';
 
+/// State management for Second Voice.
+/// Manages conversation messages, listening state, and accessibility settings.
 class ConversationProvider extends ChangeNotifier {
-  // Message state
+  // ── Message state ─────────────────────────────────────────────────
   final List<ConversationMessage> _messages = [];
   String? _partialText;
   String? _lastSpeakerId;
+  String? _errorMessage;
 
-  // Accessibility settings
+  // ── Accessibility settings ────────────────────────────────────────
   double _fontSize = 24.0;
-  bool _hapticEnabled = true;
 
-  // Audio service
+  // ── Audio service ─────────────────────────────────────────────────
   late final AudioStreamService _audioService;
   bool _isListening = false;
   bool _isInitialized = false;
+
+  // ── Configuration ─────────────────────────────────────────────────
+  double _pauseThreshold = 0.5;
 
   ConversationProvider() {
     _audioService = AudioStreamService(
       onNewMessage: _handleNewMessage,
       onPartialResult: _handlePartialResult,
       onError: _handleError,
+      onListeningStateChanged: _handleListeningStateChanged,
+      pauseThreshold: _pauseThreshold,
     );
   }
 
-  // Getters
+  // ── Getters ───────────────────────────────────────────────────────
   List<ConversationMessage> get messages => List.unmodifiable(_messages);
   String? get partialText => _partialText;
   double get fontSize => _fontSize;
   bool get isListening => _isListening;
   bool get isInitialized => _isInitialized;
-  bool get hapticEnabled => _hapticEnabled;
+  bool get hapticEnabled => HapticService.enabled;
+  double get pauseThreshold => _pauseThreshold;
+  String? get errorMessage => _errorMessage;
 
   /// Initialize audio service
   Future<bool> initialize() async {
@@ -48,20 +54,17 @@ class ConversationProvider extends ChangeNotifier {
   /// Start listening for speech
   Future<void> startListening() async {
     if (_isListening) return;
-
+    _errorMessage = null;
     await _audioService.startListening();
-    _isListening = _audioService.isListening;
-    notifyListeners();
+    // State is updated via onListeningStateChanged callback
   }
 
   /// Stop listening
   Future<void> stopListening() async {
     if (!_isListening) return;
-
     await _audioService.stopListening();
-    _isListening = false;
     _partialText = null;
-    notifyListeners();
+    // State is updated via onListeningStateChanged callback
   }
 
   /// Toggle listening state
@@ -73,48 +76,32 @@ class ConversationProvider extends ChangeNotifier {
     }
   }
 
-  /// Handle new message from audio service
-  void _handleNewMessage(ConversationMessage message) {
-    // Check for speaker change and trigger haptic
-    if (_lastSpeakerId != null && _lastSpeakerId != message.speakerId) {
-      _triggerHapticFeedback();
-    }
-    _lastSpeakerId = message.speakerId;
+  // ── Settings ──────────────────────────────────────────────────────
 
-    _messages.add(message);
-    _partialText = null;
+  /// Set font size (clamped to 20-40pt)
+  void setFontSize(double size) {
+    _fontSize = size.clamp(20.0, 40.0);
     notifyListeners();
   }
 
-  /// Handle partial result from audio service
-  void _handlePartialResult(String partial) {
-    _partialText = partial;
+  /// Toggle haptic feedback
+  void setHapticEnabled(bool enabled) {
+    HapticService.setEnabled(enabled);
     notifyListeners();
   }
 
-  /// Handle error from audio service
-  void _handleError(String error) {
-    debugPrint('Audio error: $error');
-    // Could show a snackbar or dialog here
+  /// Update pause threshold for speaker detection
+  void setPauseThreshold(double seconds) {
+    _pauseThreshold = seconds.clamp(0.2, 2.0);
+    _audioService.pauseThreshold = _pauseThreshold;
+    notifyListeners();
   }
 
-  /// Trigger haptic feedback for speaker change
-  Future<void> _triggerHapticFeedback() async {
-    if (!_hapticEnabled) return;
-    
-    final hasVibrator = await Vibration.hasVibrator() ?? false;
-    if (hasVibrator) {
-      Vibration.vibrate(duration: 100, amplitude: 128);
-    }
-  }
+  // ── Message management ────────────────────────────────────────────
 
   /// Add a message manually (for testing)
   void addMessage(ConversationMessage message) {
-    if (_lastSpeakerId != null && _lastSpeakerId != message.speakerId) {
-      _triggerHapticFeedback();
-    }
-    _lastSpeakerId = message.speakerId;
-    
+    _checkSpeakerChange(message.speakerId);
     _messages.add(message);
     notifyListeners();
   }
@@ -127,29 +114,71 @@ class ConversationProvider extends ChangeNotifier {
     }
   }
 
-  /// Set font size (clamped to 20-40pt)
-  void setFontSize(double size) {
-    _fontSize = size.clamp(20.0, 40.0);
-    notifyListeners();
-  }
-
-  /// Toggle haptic feedback
-  void setHapticEnabled(bool enabled) {
-    _hapticEnabled = enabled;
-    notifyListeners();
-  }
-
-  /// Set listening state manually (for UI without audio)
-  void setListening(bool listening) {
-    _isListening = listening;
-    notifyListeners();
-  }
-
   /// Clear all messages
   void clearMessages() {
     _messages.clear();
     _lastSpeakerId = null;
+    _errorMessage = null;
     notifyListeners();
+  }
+
+  /// Dismiss the current error
+  void dismissError() {
+    _errorMessage = null;
+    notifyListeners();
+  }
+
+  /// Export conversation as formatted text
+  String exportConversation() {
+    final buffer = StringBuffer();
+    buffer.writeln('Second Voice — Conversation Export');
+    buffer.writeln('=' * 40);
+    buffer.writeln();
+    for (final msg in _messages) {
+      final time = msg.startTime != null
+          ? '[${_formatDuration(msg.startTime!)}] '
+          : '';
+      buffer.writeln('$time${msg.speakerName}: ${msg.text}');
+    }
+    return buffer.toString();
+  }
+
+  // ── Private callbacks ──────────────────────────────────────────────
+
+  void _handleNewMessage(ConversationMessage message) {
+    _checkSpeakerChange(message.speakerId);
+    _messages.add(message);
+    _partialText = null;
+    notifyListeners();
+  }
+
+  void _handlePartialResult(String partial) {
+    _partialText = partial;
+    notifyListeners();
+  }
+
+  void _handleError(String error) {
+    debugPrint('Audio error: $error');
+    _errorMessage = error;
+    notifyListeners();
+  }
+
+  void _handleListeningStateChanged(bool listening) {
+    _isListening = listening;
+    notifyListeners();
+  }
+
+  void _checkSpeakerChange(String speakerId) {
+    if (_lastSpeakerId != null && _lastSpeakerId != speakerId) {
+      HapticService.onSpeakerChange();
+    }
+    _lastSpeakerId = speakerId;
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   @override

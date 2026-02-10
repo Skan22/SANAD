@@ -1,6 +1,5 @@
-/// Conversation message model for Second Voice
-/// Represents a single speaker utterance with timing and speaker info
-
+/// Conversation message model for Second Voice.
+/// Represents a single speaker utterance with timing and speaker info.
 class ConversationMessage {
   final String id;
   final String speakerId;

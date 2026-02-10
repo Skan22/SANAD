@@ -17,11 +17,10 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Determine alignment based on speaker
     final isRightAligned = message.speakerId == 'speaker_1';
-    final alignment = isRightAligned ? Alignment.centerRight : Alignment.centerLeft;
-    
-    // Get speaker color
+    final alignment =
+        isRightAligned ? Alignment.centerRight : Alignment.centerLeft;
+
     final bubbleColor = Color(message.color.value);
     final textColor = _getContrastColor(bubbleColor);
 
@@ -30,7 +29,8 @@ class ChatBubble extends StatelessWidget {
       child: Align(
         alignment: alignment,
         child: Column(
-          crossAxisAlignment: isRightAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isRightAligned ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             // Speaker label
             Padding(
@@ -44,13 +44,14 @@ class ChatBubble extends StatelessWidget {
                 ),
               ),
             ),
+
             // Message bubble
             Container(
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.75,
               ),
               decoration: BoxDecoration(
-                color: bubbleColor.withOpacity(0.15),
+                color: bubbleColor.withAlpha(38), // 15% opacity
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(20),
                   topRight: const Radius.circular(20),
@@ -58,7 +59,7 @@ class ChatBubble extends StatelessWidget {
                   bottomRight: Radius.circular(isRightAligned ? 4 : 20),
                 ),
                 border: Border.all(
-                  color: bubbleColor.withOpacity(0.5),
+                  color: bubbleColor.withAlpha(128), // 50% opacity
                   width: 2,
                 ),
               ),
@@ -66,16 +67,17 @@ class ChatBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Message text
-                  Text(
-                    message.text,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: fontSize,
-                      height: 1.3,
+                  Directionality(
+                    textDirection: TextDirection.rtl,
+                    child: Text(
+                      message.text,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: fontSize,
+                        height: 1.3,
+                      ),
                     ),
                   ),
-                  // Timestamp (optional)
                   if (message.startTime != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
@@ -90,12 +92,14 @@ class ChatBubble extends StatelessWidget {
                 ],
               ),
             ),
+
             // Current speaker indicator
             if (isCurrentSpeaker)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
                     color: bubbleColor,
                     borderRadius: BorderRadius.circular(10),
@@ -124,8 +128,10 @@ class ChatBubble extends StatelessWidget {
 
   /// Format duration as MM:SS
   String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final minutes =
+        duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final seconds =
+        duration.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$minutes:$seconds';
   }
 }
