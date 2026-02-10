@@ -303,17 +303,41 @@ class AudioStreamService {
     }
   }
 
-  /// Demo mode for desktop platforms — simulates transcription
+  /// Demo mode for desktop platforms or when forced — simulates transcription
   void _runDemoMode() {
-    debugPrint('Running in demo mode - simulating conversation');
+    debugPrint('Running in demo mode - simulating conversation for model: $_currentModelPath');
 
-    const demoMessages = [
-      'Hello, how are you today?',
-      'I am doing well, thank you for asking!',
-      'This is really great.',
-      'The Second Voice app is working perfectly.',
-      'The speaker diarization feature looks amazing!',
+    final bool isArabic = _currentModelPath.contains('ar-tn');
+
+    final List<String> demoMessagesEn = [
+      'Welcome to the Second Voice demonstration.',
+      'We are showcasing real-time speech-to-text with speaker identification.',
+      'Notice how the app accurately labels different speakers based on natural pauses.',
+      'This feature is critical for accessibility and clinical documentation.',
+      'I can even rename myself for a more personalized experience.',
+      'Now, watch as the second speaker joins the conversation.',
+      'That sounds amazing! How does it handle background noise?',
+      'The underlying models are robust and optimized for clarity.',
+      'It also supports multiple languages, like English and Arabic.',
+      'Let us see how it performs with a different speaker color coding.',
+      'Everything looks very smooth and reliable.',
+      'Thank you for joining our hackathon presentation today!',
     ];
+
+    final List<String> demoMessagesAr = [
+      'مرحباً بكم في عرض تطبيق "الصوت الثاني".',
+      'هذا التطبيق يساعد ضعاف السمع على متابعة المحادثات.',
+      'التطبيق يدعم اللغة العربية بشكل كامل مع تحديد المتحدثين.',
+      'لاحظ كيف يتم تمييز كل متحدث بلون مختلف.',
+      'يمكنني تعديل نص الرسالة إذا وجد خطأ في التعرف على الصوت.',
+      'الآن ينضم متحدث ثانٍ لتجربة ميزة التعرف على المتحدث المتعدد.',
+      'هذا رائع جداً! هل يدعم التطبيق العمل دون إنترنت؟',
+      'نعم، التطبيق يعمل بشكل كامل في وضع عدم الاتصال بالشبكة.',
+      'هذا يضمن الخصوصية التامة لبيانات المستخدم.',
+      'شكراً لكم على متابعة هذا العرض التجريبي.',
+    ];
+
+    final demoMessages = isArabic ? demoMessagesAr : demoMessagesEn;
 
     var messageIndex = 0;
     final random = math.Random();
@@ -327,12 +351,15 @@ class AudioStreamService {
       // 1. Emit simulated amplitude
       _amplitudeController.add(0.2 + random.nextDouble() * 0.4);
 
-      // 2. Emit messages periodically (every 2 seconds)
-      if (timer.tick % 20 == 0) {
+      // 2. Emit messages periodically (every 2.5 seconds for demo flow)
+      if (timer.tick % 25 == 0) {
         if (messageIndex < demoMessages.length) {
           final now = DateTime.now();
           if (messageIndex > 0) {
-            _lastWordTime = now.subtract(const Duration(milliseconds: 600));
+            // Force a speaker change occasionally in demo
+            _lastWordTime = (messageIndex % 3 == 0) 
+                ? now.subtract(Duration(milliseconds: (pauseThreshold * 1100).toInt()))
+                : now.subtract(const Duration(milliseconds: 100));
           }
 
           _emitMessage(demoMessages[messageIndex], now);
