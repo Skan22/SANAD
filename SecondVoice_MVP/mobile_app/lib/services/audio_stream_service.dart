@@ -26,7 +26,7 @@ class AudioStreamService {
   double pauseThreshold; // seconds
   static const int sampleRate = 16000;
   static const String modelPath =
-      'assets/models/vosk-model-small-ar-tn-0.1-linto.zip';
+      'assets/models/vosk-model-small-en-us-0.15.zip';
 
   // Callbacks
   final void Function(ConversationMessage)? onNewMessage;
@@ -93,18 +93,51 @@ class AudioStreamService {
 
   /// Resolve the actual model directory (may be nested inside zip extraction)
   String _resolveModelPath(String basePath) {
-    if (File('$basePath/conf/model.conf').existsSync()) return basePath;
+    debugPrint('Resolving model path for: $basePath');
 
-    final dir = Directory(basePath);
-    if (!dir.existsSync()) return basePath;
-
-    for (final child in dir.listSync()) {
-      if (child is Directory &&
-          File('${child.path}/conf/model.conf').existsSync()) {
-        debugPrint('Found model in subdirectory: ${child.path}');
-        return child.path;
-      }
+    final baseDir = Directory(basePath);
+    if (!baseDir.existsSync()) {
+      debugPrint('Error: Base model directory does not exist: $basePath');
+      return basePath;
     }
+
+    try {
+      // 1. Check if model.conf is at the root
+      if (File('$basePath/conf/model.conf').existsSync()) {
+        debugPrint('Found model.conf at root: $basePath');
+        return basePath;
+      }
+
+      // 2. Recursive search for conf/model.conf
+      final entities = baseDir.listSync(recursive: true);
+      debugPrint('Found ${entities.length} entities in model directory');
+
+      for (final entity in entities) {
+        if (entity.path.endsWith('conf/model.conf')) {
+          // The model directory is the parent of the 'conf' directory
+          final modelDir = File(entity.path).parent.parent.path;
+          debugPrint('Found model.conf via recursive search: ${entity.path}');
+          debugPrint('Resolved model directory: $modelDir');
+          return modelDir;
+        }
+      }
+
+      // 3. Fallback to listing immediate children if recursive search missed it (unlikely)
+      debugPrint('Recursive search failed, checking immediate subdirectories...');
+      for (final child in baseDir.listSync()) {
+        if (child is Directory) {
+          final subConf = File('${child.path}/conf/model.conf');
+          if (subConf.existsSync()) {
+            debugPrint('Found model in immediate subdirectory: ${child.path}');
+            return child.path;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error while resolving model path: $e');
+    }
+
+    debugPrint('Warning: Could not find conf/model.conf, returning base path: $basePath');
     return basePath;
   }
 
@@ -219,11 +252,11 @@ class AudioStreamService {
     debugPrint('Running in demo mode - simulating conversation');
 
     const demoMessages = [
-      'مرحباً، كيف حالك اليوم؟',
-      'أنا بخير، شكراً لسؤالك!',
-      'هذا رائع جداً.',
-      'تطبيق الصوت الثاني يعمل بشكل ممتاز.',
-      'ميزة تمييز المتحدثين تبدو مذهلة!',
+      'Hello, how are you today?',
+      'I am doing well, thank you for asking!',
+      'This is really great.',
+      'The Second Voice app is working perfectly.',
+      'The speaker diarization feature looks amazing!',
     ];
 
     var messageIndex = 0;
