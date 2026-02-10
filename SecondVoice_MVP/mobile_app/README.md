@@ -1,16 +1,30 @@
-# second_voice
+# Second Voice - Mobile Application (Flutter)
 
-A new Flutter project.
+This directory contains the source code for the Second Voice mobile application, built with Flutter.
 
-## Getting Started
+## 📁 Folder Structure
 
-This project is a starting point for a Flutter application.
+- `lib/models`: PODO (Plain Old Dart Objects) for conversation messages and speaker configurations.
+- `lib/screens`: Main UI screens (Conversation, History).
+- `lib/services`:
+  - `AudioStreamService`: Interface with Vosk for real-time transcription and diarization.
+  - `DatabaseService`: SQLite implementation for session persistence.
+  - `ConversationProvider`: State management for the transcription flow.
+  - `HapticService`: Logic for accessibility vibration cues.
+- `lib/theme`: High-contrast dark theme and color palettes.
+- `assets/models`: Pre-bundled Vosk ZIP models for English and Arabic.
 
-A few resources to get you started if this is your first Flutter project:
+## 🛠️ Setup & Build
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+1. **Install Flutter:** Follow instructions at [flutter.dev](https://flutter.dev/docs/get-started/install).
+2. **Fetch Packages:**
+   ```bash
+   flutter pub get
+   ```
+3. **Run on Device:**
+   ```bash
+   flutter run --release
+   ```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🎙️ Note on Models
+The app uses **Vosk**. Models are stored in `assets/models/`. If you wish to add more languages, download the small/mobile versions from [alphacephei.com/vosk/models](https://alphacephei.com/vosk/models) and update `AudioStreamService` and `SettingsPanel`.
