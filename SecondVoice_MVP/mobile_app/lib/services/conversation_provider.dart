@@ -8,6 +8,8 @@ import 'audio_stream_service.dart';
 import 'haptic_service.dart';
 import 'database_service.dart';
 
+enum TranscriptionEngine { vosk, gemini }
+
 /// State management for Second Voice.
 /// Manages conversation messages, listening state, and accessibility settings.
 class ConversationProvider extends ChangeNotifier {
@@ -27,6 +29,9 @@ class ConversationProvider extends ChangeNotifier {
   // ── Accessibility settings ────────────────────────────────────────
   double _fontSize = 24.0;
   String _currentModelPath = 'assets/models/vosk-model-small-en-us-0.15.zip';
+  TranscriptionEngine _engine = TranscriptionEngine.vosk;
+  String _geminiApiKey = '';
+
 
   // ── Audio service ─────────────────────────────────────────────────
   late final AudioStreamService _audioService;
@@ -78,6 +83,16 @@ class ConversationProvider extends ChangeNotifier {
     _showPerformanceOverlay = _prefs!.getBool('show_performance_overlay') ?? false;
     _audioService.forceDemoMode = _prefs!.getBool('demo_mode') ?? false;
     
+    final engineIndex = _prefs!.getInt('transcription_engine') ?? 0;
+    _engine = TranscriptionEngine.values[engineIndex];
+    _geminiApiKey = _prefs!.getString('gemini_api_key') ?? '';
+    
+    _audioService.updateGeminiConfig(
+      enabled: _engine == TranscriptionEngine.gemini,
+      apiKey: _geminiApiKey,
+    );
+
+    
     _loadSpeakerNames();
     await loadHistory();
   }
@@ -114,6 +129,10 @@ class ConversationProvider extends ChangeNotifier {
   int get currentLatency => _currentLatency;
   bool get showPerformanceOverlay => _showPerformanceOverlay;
   bool get demoMode => _audioService.forceDemoMode;
+  TranscriptionEngine get engine => _engine;
+  String get geminiApiKey => _geminiApiKey;
+  bool get isGeminiEnabled => _engine == TranscriptionEngine.gemini;
+
 
   /// Update max participants
   void setMaxParticipants(int count) {
@@ -144,6 +163,38 @@ class ConversationProvider extends ChangeNotifier {
     _prefs?.setBool('show_performance_overlay', enabled);
     notifyListeners();
   }
+
+  /// Toggle transcription engine
+  Future<void> setEngine(TranscriptionEngine engine) async {
+    if (_engine == engine) return;
+    
+    final wasListening = _isListening;
+    if (wasListening) await stopListening();
+    
+    _engine = engine;
+    _prefs?.setInt('transcription_engine', engine.index);
+    
+    _audioService.updateGeminiConfig(
+      enabled: _engine == TranscriptionEngine.gemini,
+      apiKey: _geminiApiKey,
+    );
+    
+    if (wasListening) await startListening();
+    notifyListeners();
+  }
+
+  /// Update Gemini API Key
+  void setGeminiApiKey(String key) {
+    _geminiApiKey = key;
+    _prefs?.setString('gemini_api_key', key);
+    
+    _audioService.updateGeminiConfig(
+      enabled: _engine == TranscriptionEngine.gemini,
+      apiKey: _geminiApiKey,
+    );
+    notifyListeners();
+  }
+
 
   /// Change transcription model (language)
   Future<void> setModel(String path) async {

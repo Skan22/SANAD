@@ -4,8 +4,28 @@ import '../services/conversation_provider.dart';
 import '../theme/app_colors.dart';
 
 /// Settings panel with text size slider and haptic toggle
-class SettingsPanel extends StatelessWidget {
+class SettingsPanel extends StatefulWidget {
   const SettingsPanel({super.key});
+
+  @override
+  State<SettingsPanel> createState() => _SettingsPanelState();
+}
+
+class _SettingsPanelState extends State<SettingsPanel> {
+  late TextEditingController _apiKeyController;
+
+  @override
+  void initState() {
+    super.initState();
+    final provider = Provider.of<ConversationProvider>(context, listen: false);
+    _apiKeyController = TextEditingController(text: provider.geminiApiKey);
+  }
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +224,67 @@ class SettingsPanel extends StatelessWidget {
 
                 const Divider(color: AppColors.surfaceBorder, height: 24),
 
+                // Gemini AI toggle
+                Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, size: 20, color: AppColors.neonBlue),
+                    const SizedBox(width: 12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Gemini AI (Cloud)',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: provider.fontSize * 0.6,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'Higher accuracy, requires internet',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: provider.fontSize * 0.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    Switch(
+                      value: provider.isGeminiEnabled,
+                      onChanged: (value) {
+                        provider.setEngine(value ? TranscriptionEngine.gemini : TranscriptionEngine.vosk);
+                      },
+                      activeTrackColor: AppColors.neonBlue.withAlpha(128),
+                      activeThumbColor: AppColors.neonBlue,
+                    ),
+                  ],
+                ),
+
+                if (provider.isGeminiEnabled) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _apiKeyController,
+                    obscureText: true,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Enter Google AI API Key',
+                      hintStyle: const TextStyle(color: AppColors.textTertiary),
+                      filled: true,
+                      fillColor: AppColors.surfaceBorder.withOpacity(0.3),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: AppColors.surfaceBorder),
+                      ),
+                      prefixIcon: const Icon(Icons.key, size: 18, color: AppColors.textSecondary),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                    onChanged: (val) => provider.setGeminiApiKey(val),
+                  ),
+                ],
+
+                const Divider(color: AppColors.surfaceBorder, height: 24),
+
                 // Performance Overlay toggle
                 Row(
                   children: [
@@ -257,3 +338,4 @@ class SettingsPanel extends StatelessWidget {
     );
   }
 }
+

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:vosk_flutter/vosk_flutter.dart';
 import '../models/conversation_message.dart';
+import 'gemini_live_service.dart';
 
 /// Audio stream service for real-time speech-to-text using Vosk
 /// Handles microphone input, permission management, and transcription
@@ -32,6 +33,12 @@ class AudioStreamService {
   Timer? _demoTimer;
   String _currentModelPath = 'assets/models/vosk-model-small-en-us-0.15.zip';
 
+  // Gemini State
+  GeminiLiveService? _geminiService;
+  bool _useGemini = false;
+  String _geminiApiKey = '';
+
+
   // Configuration
   double pauseThreshold; // seconds
   bool forceDemoMode = false;
@@ -55,9 +62,29 @@ class AudioStreamService {
 
   bool get isInitialized => _isInitialized;
   bool get isListening => _isListening;
+  bool get isGeminiActive => _useGemini && _geminiService != null;
   Stream<double> get amplitudeStream => _amplitudeController.stream;
   Stream<int> get latencyStream => _latencyController.stream;
   String get currentModelPath => _currentModelPath;
+
+  /// Update Gemini Settings
+  void updateGeminiConfig({required bool enabled, required String apiKey}) {
+    _useGemini = enabled;
+    _geminiApiKey = apiKey;
+    
+    if (enabled && apiKey.isNotEmpty) {
+      _geminiService = GeminiLiveService(
+        apiKey: apiKey,
+        onNewMessage: onNewMessage,
+        onPartialResult: onPartialResult,
+        onError: onError,
+      );
+    } else {
+      _geminiService?.disconnect();
+      _geminiService = null;
+    }
+  }
+
 
   /// Check if we're running on a desktop platform or if demo mode is forced
   bool get _shouldRunDemo =>
@@ -159,6 +186,11 @@ class AudioStreamService {
         return;
       }
 
+      if (_useGemini && _geminiService != null) {
+        debugPrint('Gemini Live API: Connecting...');
+        await _geminiService!.connect();
+      }
+
       // Start recording stream (Mobile)
       debugPrint('Starting audio stream for transcription...');
       final stream = await _recorder.startStream(const RecordConfig(
@@ -168,22 +200,23 @@ class AudioStreamService {
       ));
 
       _audioSubscription = stream.listen((Uint8List data) async {
-        if (_recognizer == null) return;
+        if (_useGemini && _geminiService != null) {
+          // Gemini Path
+          _geminiService!.sendAudio(data);
+        } else if (_recognizer != null) {
+          // Vosk Path
+          final stopwatch = Stopwatch()..start();
+          final resultFound = await _recognizer!.acceptWaveformBytes(data);
+          stopwatch.stop();
+          _latencyController.add(stopwatch.elapsedMilliseconds);
 
-        final stopwatch = Stopwatch()..start();
-
-        // 1. Process for transcription
-        final resultFound = await _recognizer!.acceptWaveformBytes(data);
-        
-        stopwatch.stop();
-        _latencyController.add(stopwatch.elapsedMilliseconds);
-
-        if (resultFound) {
-          final result = await _recognizer!.getResult();
-          _handleRecognitionResult(result);
-        } else {
-          final partial = await _recognizer!.getPartialResult();
-          onPartialResult?.call(_extractPartialText(partial));
+          if (resultFound) {
+            final result = await _recognizer!.getResult();
+            _handleRecognitionResult(result);
+          } else {
+            final partial = await _recognizer!.getPartialResult();
+            onPartialResult?.call(_extractPartialText(partial));
+          }
         }
 
         // 2. Calculate amplitude for visualizer
@@ -209,8 +242,9 @@ class AudioStreamService {
       _demoTimer?.cancel();
       _demoTimer = null;
       
-      await _audioSubscription?.cancel();
-      _audioSubscription = null;
+      if (_useGemini) {
+        await _geminiService?.disconnect();
+      }
       
       await _recorder.stop();
       
@@ -380,9 +414,11 @@ class AudioStreamService {
   /// Cleanup Vosk resources
   Future<void> _cleanupVosk() async {
     await stopListening();
+    _geminiService?.disconnect();
     _recognizer?.dispose();
     _model?.dispose();
     _recognizer = null;
+
     _model = null;
     _isInitialized = false;
   }
